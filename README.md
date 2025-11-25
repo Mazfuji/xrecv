@@ -91,6 +91,17 @@ ls -l xrecv.exe
 
 The resulting binary is safe to reconstruct via Windows 98 `debug.exe`.
 
+### 3.4 Compile via helper script
+
+You can also use the bundled helper:
+
+```bash
+./build.sh               # builds xrecv.exe
+./build.sh --debug-script    # builds xrecv.exe + xrecv_dbg.txt
+```
+
+* `--debug-script` additionally produces `xrecv.hex` and a DEBUG script (`xrecv_dbg.txt`) using `make_debug_script.py`. The script defaults to emitting `XRECV.EXE` inside the DEBUG recipe.
+
 ---
 
 ## 4. Delivering xrecv.exe to Windows 98 Using DEBUG
@@ -118,6 +129,23 @@ If you cannot copy the file normally, you can re-create the binary using a DEBUG
    ```
 
 This reconstructs `XRECV.EXE` in the current directory.
+
+### 4.1 About `make_debug_script.py`
+
+`make_debug_script.py` converts a plain hex dump (e.g., `xxd -p` output) into a DEBUG script that:
+
+* writes the bytes starting at `0100h` (DEBUG load address)
+* sets `CX` to the binary size
+* saves the file with the name you pass as the second argument
+* emits all lines with CR+LF endings (as required by DEBUG)
+
+Usage:
+
+```bash
+python3 make_debug_script.py INPUT.hex OUTPUT.EXE > script.txt
+```
+
+Use the generated `script.txt` with `debug < script.txt` on Windows 98 to re-create the executable.
 
 ---
 

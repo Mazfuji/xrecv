@@ -100,6 +100,17 @@ ls -l xrecv.exe
 Windows 98 上の `debug.exe` で復元しやすいよう、
 できるだけ小さいサイズになるように設計されています。
 
+### 3.4 付属ビルドスクリプトを使う
+
+手軽にビルドしたい場合は付属のスクリプトも利用できます。
+
+```bash
+./build.sh                       # xrecv.exe をビルド
+./build.sh --debug-script        # ビルド＋xrecv_dbg.txt も生成
+```
+
+* `--debug-script` を付けると、`xrecv.hex` と DEBUG 用スクリプト `xrecv_dbg.txt` を `make_debug_script.py` で自動生成します（スクリプト内の出力ファイル名はデフォルトで `XRECV.EXE`）。
+
 ---
 
 ## 4. debug スクリプト経由で Win98 に配置する（概要）
@@ -138,6 +149,23 @@ Windows 98 側に直接 EXE をコピーできない場合、
 
 > ⚠ 注意: debug 用スクリプトは **CR+LF (DOS 形式の改行)** である必要があります。
 > `make_debug_script.py` は CR+LF を出力するように実装しておくと安全です。
+
+### 4.1 `make_debug_script.py` について
+
+`make_debug_script.py` は、`xxd -p` などで得たプレーンな 16 進テキストを、DEBUG が読み込めるスクリプトに変換します。特徴は以下の通りです。
+
+* 0100h（DEBUG のロードアドレス）から順にバイトを書き込む `e` 行を生成
+* `CX` にバイナリサイズを設定
+* 第二引数で指定したファイル名で `w` 保存
+* すべて CR+LF で出力
+
+使い方:
+
+```bash
+python3 make_debug_script.py INPUT.hex OUTPUT.EXE > script.txt
+```
+
+Windows 98 側では `debug < script.txt` として実行すると `OUTPUT.EXE` が再構成されます。
 
 ---
 

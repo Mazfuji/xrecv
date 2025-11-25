@@ -1,0 +1,8 @@
+# Build artifacts
+xrecv.exe
+*.hex
+*_dbg.txt
+
+# Python cache
+__pycache__/
+*.pyc
