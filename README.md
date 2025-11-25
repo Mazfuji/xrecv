@@ -1,259 +1,232 @@
 # xrecv.exe README
 
-Windows 98 (特に Safe Mode 環境) で、シリアルポート経由の **XMODEM チェックサムモード**を用いてファイルを受信するための最小限ユーティリティです。
+`xrecv.exe` is a minimal **XMODEM Checksum receiver** for Windows 98, designed specifically for recovery scenarios where the system can only operate in **Safe Mode** and lacks access to normal file transfer methods (no USB, no LAN, no CD/DVD, no floppy). It enables transferring binary files (DLL/EXE) over a serial port using a second machine (e.g., Ubuntu/Linux).
 
-この README は、
+This document describes:
 
-* `xrecv.c` の概要
-* Ubuntu 上でのコンパイル方法
-* Windows 98 への配置方法（debug スクリプト経由を前提）
-* 実際のファイル受信手順（Ubuntu → Win98）
-
-をまとめたものです。
+* What `xrecv.exe` does
+* How to compile `xrecv.c` using mingw-w64 on Linux
+* How to deliver the EXE to Windows 98 using a DEBUG script
+* How to perform XMODEM transfers from Linux to Win98
 
 ---
 
-## 1. 機能概要
+## 1. Overview
 
-`xrecv.exe` は以下の動作を行います。
+`xrecv.exe` provides a lightweight implementation of **XMODEM (128-byte, checksum mode)** and writes the received binary data to a file.
 
-* Windows のシリアルポート (`COM1`〜`COM4`) をオープン
-* ボーレート **38400 / 8N1 / FlowControl 無し** に設定
-* **XMODEM (128 バイト・チェックサム版)** でファイルを受信
-* 受信データを指定されたファイルにそのままバイナリで書き込む
+### Supported protocol features
 
-### 対応しているプロトコル仕様
+* **SOH (0x01)** for block start (128-byte)
+* **EOT (0x04)** for transfer end
+* **ACK (0x06)** on valid block
+* **NAK (0x15)** on checksum or header error
+* Block number and inverse (0xFF - blk)
+* Simple checksum
 
-* ブロックサイズ：128 バイト
-* チェック方式：単純チェックサム（CRC ではない）
-* 制御コード：
+### Serial settings (fixed)
 
-  * `SOH (0x01)` ブロック開始
-  * `EOT (0x04)` 転送終了
-  * `ACK (0x06)` 正常受信応答
-  * `NAK (0x15)` 再送要求
-* ブロック番号 + 反転値 (0xFF) の整合性チェックあり
+* **38400 baud**
+* **8 data bits, no parity, 1 stop bit (8N1)**
+* **Flow Control Off (no RTS/CTS, no XON/XOFF)**
 
-### 想定用途
+### Target use case
 
-* 壊れかけの Windows 98 環境（Safe Mode のみ起動、ネットワーク不可など）に対し、
-  COM ポート＋別マシン (Ubuntu など) を使って DLL や EXE を救出転送するレスキュー用途。
+This tool is intended for scenarios such as:
+
+* Windows 98 system boots only in Safe Mode
+* Network stack is broken (e.g., missing `msnp32.dll`)
+* No working floppy, CD-R, USB, PCMCIA
+* Only COM1/COM2 works
+
+In such cases, `xrecv.exe` allows recovery of critical system files.
 
 ---
 
-## 2. 使い方（Windows 98 側）
+## 2. Usage (on Windows 98)
 
-コマンドライン形式：
+Command format:
 
 ```bat
 xrecv COM1 output.bin
 xrecv COM2 msnp32.dll
 ```
 
-* 第 1 引数: 使用する COM ポート名 (`COM1`〜`COM4`)
-* 第 2 引数: 受信した内容を書き出すファイル名
+* **Argument 1:** COM port name (`COM1`–`COM4`)
+* **Argument 2:** Output file name (binary)
 
-例：
+Example:
 
 ```bat
 xrecv COM1 msnp32.dll
 ```
 
-この状態で xrecv は送信開始を待機し、定期的に `NAK` を送信します。
-
-別マシン側から XMODEM チェックサムモードで `msnp32.dll` を送信すると、
-受信完了後、カレントディレクトリに `msnp32.dll` が生成されます。
+This puts `xrecv.exe` into **waiting mode**, where it repeatedly sends `NAK` until the sender begins transmitting.
 
 ---
 
-## 3. Ubuntu 上でのコンパイル方法
+## 3. Compiling on Ubuntu/Linux
 
-ここでは Ubuntu (または他の Linux) 上で **mingw-w64** を用いて
-Windows 98 用の 32bit コンソール EXE をビルドする手順を示します。
-
-### 3.1 依存パッケージのインストール
+### 3.1 Install mingw-w64
 
 ```bash
 sudo apt update
 sudo apt install mingw-w64
 ```
 
-### 3.2 ビルドコマンド
-
-`xrecv.c` がカレントディレクトリにある前提で：
+### 3.2 Compile
 
 ```bash
 i686-w64-mingw32-gcc -Os -s -o xrecv.exe xrecv.c
 ```
 
-* `-Os` : サイズ最適化
-* `-s`  : シンボルストリップ（EXE を小さくする）
-* 出力ファイル: `xrecv.exe`
+* `-Os`: Optimize for size
+* `-s` : Strip symbols to minimize EXE size
 
-### 3.3 生成物の確認
+### 3.3 Verify
 
 ```bash
 ls -l xrecv.exe
 ```
 
-サイズが数十 KB 程度のコンソール EXE が生成されます。
-Windows 98 上の `debug.exe` で復元しやすいよう、
-できるだけ小さいサイズになるように設計されています。
+The resulting binary is safe to reconstruct via Windows 98 `debug.exe`.
 
 ---
 
-## 4. debug スクリプト経由で Win98 に配置する（概要）
+## 4. Delivering xrecv.exe to Windows 98 Using DEBUG
 
-Windows 98 側に直接 EXE をコピーできない場合、
-以下の方法で `xrecv.exe` をシリアル経由で送り込むことができます。
+If you cannot copy the file normally, you can re-create the binary using a DEBUG script.
 
-1. Ubuntu で `xrecv.exe` を 16 進テキスト化：
+1. Convert binary to hex text:
 
    ```bash
    xxd -p xrecv.exe > xrecv.hex
    ```
 
-2. `xrecv.hex` から **MS-DOS DEBUG 用スクリプト**を生成：
+2. Generate a DEBUG script (CR+LF required):
 
    ```bash
    python3 make_debug_script.py xrecv.hex XRECV.EXE > xrecv_dbg.txt
    ```
 
-   * `make_debug_script.py` は、
+3. Transfer `xrecv_dbg.txt` to Windows 98 via plain ASCII serial transfer (e.g., using `COPY COM1:`).
 
-     * 入力: `xxd -p` 形式の 16 進テキスト
-     * 出力: `debug < xrecv_dbg.txt` で実行可能なスクリプト
-       を生成するユーティリティです。
-
-3. `xrecv_dbg.txt` をシリアル経由で Windows 98 に転送
-   （例：Ubuntu 側で `/dev/ttyUSB0` に対して ASCII 送信、Win98 側で `COPY COM1: XRECV_DBG.TXT`）。
-
-4. Win98 側で `xrecv_dbg.txt` を `debug` に食わせて EXE を再構成：
+4. On Windows 98:
 
    ```bat
-   debug < XRECV_DBG.TXT
+   debug < xrecv_dbg.txt
    ```
 
-   正常終了すれば、カレントディレクトリに `XRECV.EXE`（実体は xrecv.exe）が生成されます。
-
-> ⚠ 注意: debug 用スクリプトは **CR+LF (DOS 形式の改行)** である必要があります。
-> `make_debug_script.py` は CR+LF を出力するように実装しておくと安全です。
+This reconstructs `XRECV.EXE` in the current directory.
 
 ---
 
-## 5. Ubuntu 側での XMODEM 送信手順（minicom 使用）
+## 5. Sending Files from Ubuntu using XMODEM
 
-Win98 側で `xrecv` が待機している状態で、
-Ubuntu 側から XMODEM でファイルを送信する典型例です。
-
-### 5.1 Ubuntu でシリアルポート設定
+### 5.1 Configure the serial port
 
 ```bash
 sudo stty -F /dev/ttyUSB0 38400 cs8 -parenb -cstopb -ixon -ixoff -crtscts
 ```
 
-### 5.2 minicom の起動と設定
+### 5.2 Start minicom
 
 ```bash
 sudo minicom -s
 ```
 
-* Serial port setup:
+Set:
 
-  * A: Serial Device → `/dev/ttyUSB0`
-  * E: Bps/Par/Bits → `38400 8N1`
-  * F: Hardware Flow Control → `No`
-  * G: Software Flow Control → `No`
+* Serial port: `/dev/ttyUSB0`
+* 38400 8N1
+* Hardware Flow Control: **No**
+* Software Flow Control: **No**
 
-設定後、`Save setup as dfl` で保存しておくと便利です。
-
-### 5.3 Win98 側で xrecv を起動
+### 5.3 Run xrecv on Windows 98
 
 ```bat
 xrecv COM1 msnp32.dll
 ```
 
-### 5.4 Ubuntu 側で XMODEM 送信
+### 5.4 Send file from Ubuntu (inside minicom)
 
-minicom の画面で：
+1. Press **Ctrl+A → S** (Send)
+2. Choose **xmodem** (checksum mode)
+3. Select `msnp32.dll`
+4. Press **Enter**
 
-1. `Ctrl + A` → `S`（Send）
-2. プロトコルとして `xmodem` を選択
+When the transfer completes, Win98 will show:
 
-   * **xmodem-1k / xmodem-crc ではなく、チェックサム版 xmodem を選ぶこと**
-3. 送信ファイルとして `msnp32.dll` を選択
-4. Enter で送信開始
+```
+Completed.
+```
 
-転送が完了すると、Win98 側の `xrecv` が `Completed.` と表示し、
-カレントディレクトリに `msnp32.dll` が作成されます。
-
----
-
-## 6. 受信結果の確認と運用上の注意
-
-1. **ファイルサイズの確認**
-
-   Ubuntu 側で元ファイルのサイズを控えておきます：
-
-   ```bash
-   ls -l msnp32.dll
-   ```
-
-   Win98 側で：
-
-   ```bat
-   dir msnp32.dll
-   ```
-
-   サイズが一致していることを確認します。
-
-2. **必要に応じて二重受信＋バイナリ比較**
-
-   信頼性をさらに上げるには、2回受信して比較します。
-
-   ```bat
-   xrecv COM1 msnp32a.dll
-   xrecv COM1 msnp32b.dll
-   fc /b msnp32a.dll msnp32b.dll
-   ```
-
-   `FC /B` で差分なしなら、実質的に転送は成功と言ってよいレベルです。
-
-3. **ボーレートを下げる選択肢**
-
-   環境によっては 38400bps より 9600bps の方が安定する場合があります。
-   xrecv.c / minicom の両方の設定を揃えてボーレートを変更してください。
+A new file `msnp32.dll` will appear in the current directory.
 
 ---
 
-## 7. 制限事項・既知の簡略化
+## 6. Verification
 
-`xrecv.exe` はレスキュー用途を想定した **最小限の XMODEM 実装**であり、
-一般的な完全実装に比べて以下のような簡略・制限があります。
+### 6.1 File size check
 
-* 128 バイトブロック＋チェックサム方式のみ対応（CRC / 1K ブロック非対応）
-* ブロック番号のロールバックや二重受信に対する高度な処理は未実装
-* CAN (0x18) によるセッション中断処理などは簡略化
+Ubuntu:
 
-とはいえ、
+```bash
+ls -l msnp32.dll
+```
 
-* 室内での短いクロスケーブル
-* ボーレートを適切に設定
-* 数十 KB 程度の DLL を 1〜2 回転送
+Windows 98:
 
-といった状況では、実用上十分な信頼性が期待できます。
+```bat
+dir msnp32.dll
+```
+
+Sizes must match.
+
+### 6.2 Optional: double-transfer comparison
+
+```bat
+xrecv COM1 msnp32a.dll
+xrecv COM1 msnp32b.dll
+fc /b msnp32a.dll msnp32b.dll
+```
+
+If `FC /B` reports no differences, your transfer is fully reliable.
+
+### 6.3 Optional: use a lower baud rate
+
+If errors occur, use **9600 baud** on both sides.
 
 ---
 
-## 8. 典型的なレスキューフロー例
+## 7. Limitations
 
-1. Ubuntu で `xrecv.exe` をビルド
-2. `xxd -p` ＋ `make_debug_script.py` で DEBUG スクリプト生成
-3. スクリプトをシリアル経由で Win98 に転送
-4. Win98 の `debug` で `XRECV.EXE` を再構築
-5. `xrecv COM1 msnp32.dll` を実行
-6. Ubuntu から minicom の XMODEM 送信で `msnp32.dll` を送信
-7. 受信完了後、`msnp32.dll` を `C:\WINDOWS\SYSTEM\` にコピーして再起動
+`xrecv.exe` is intentionally minimal. It lacks:
 
-この流れで、物理メディアやネットワークが使えない Windows 98 マシンでも、
-COM ポートだけを頼りに DLL / EXE を救出転送することができます。
+* CRC XMODEM
+* XMODEM-1k support
+* CAN-based session abort
+* Advanced block number handling (only basic validation)
+
+However, for short-range cable transfers in a recovery scenario, it is sufficiently robust.
+
+---
+
+## 8. Typical Full Recovery Workflow
+
+1. Build `xrecv.exe` on Ubuntu
+2. Convert to HEX
+3. Generate DEBUG script (CR+LF)
+4. Send script to Win98
+5. Rebuild `XRECV.EXE` using DEBUG
+6. Run `xrecv COM1 target.dll`
+7. Send DLL via XMODEM from Ubuntu
+8. Place DLL into the correct Win98 system directory and reboot
+
+This restores broken components (like `msnp32.dll`) while avoiding all non-working devices.
+
+---
+
+## 9. License
+
+This project is released under the MIT License (see `MIT LICENSE.txt`).
